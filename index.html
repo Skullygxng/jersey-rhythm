@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#08050a" />
+    <meta name="description" content="Jersey Rhythm — a Jersey club rhythm game. Four lanes, hold ribbons, Brick City chants." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Jersey Rhythm" />
+    <link rel="icon" href="./media/icon.png" />
+    <link rel="stylesheet" href="./client/src/styles.css" />
+    <title>Jersey Rhythm — Brick City Club</title>
+    <script src="./vendor/react.production.min.js"></script>
+    <script src="./vendor/react-dom.production.min.js"></script>
+    <script src="./vendor/babel.min.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "./vendor/react.js",
+          "react/jsx-runtime": "./vendor/jsx-runtime.js",
+          "react/jsx-dev-runtime": "./vendor/jsx-runtime.js",
+          "react-dom": "./vendor/react-dom.js",
+          "react-dom/client": "./vendor/react-dom.js",
+          "react-router-dom": "./vendor/react-router-dom.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./runtime.js"></script>
+  </body>
+</html>
