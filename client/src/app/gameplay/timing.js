@@ -1,12 +1,12 @@
 // Start-of-run timing.
 //
-// A run has to hand the player a readable first note: the gem needs to travel
-// the highway before it asks for a tap. Easy charts get a slower highway and a
-// longer lead, and a song that opens right on a note gets a short silent
-// run-in so the first gem still has the full distance to fall.
+// The music starts the moment the count-in ends — published rhythm games never
+// run the field in silence after the countdown. The reading room comes from
+// where the chart begins: a run starts early enough in the track that the first
+// note is still traveling when GO lands, and Easy's slower highway gets a
+// longer lead.
 
 export const COUNT_IN_MS = 3200;
-export const MAX_PRE_ROLL_MS = 1500;
 
 export function paceScale(difficultyId) {
   if (difficultyId === "easy") return 1.28;
@@ -26,20 +26,7 @@ export function readyLeadFor(difficultyId, travelMs) {
   return Math.max(travelMs + 650, base);
 }
 
-/** Where the audio starts: early enough to leave the full lead-in. */
-export function startFor(firstNoteAt, chartStartAt, readyLeadMs) {
-  return Math.max(0, Math.min(Number(chartStartAt) || 0, firstNoteAt - readyLeadMs));
-}
-
-/** Silent run-in used when the song opens too close to its first note. */
-export function preRollFor(firstNoteAt, startAt, readyLeadMs) {
-  const achieved = Math.max(0, firstNoteAt - startAt);
-  const needed = readyLeadMs - achieved;
-  if (needed <= 0) return 0;
-  return Math.round(Math.min(MAX_PRE_ROLL_MS, needed));
-}
-
-/** GO-to-first-note gap this run will actually have, in ms. */
-export function leadInFor(firstNoteAt, startAt, preRollMs) {
-  return firstNoteAt - (startAt - preRollMs);
+/** Where the music starts: early enough to give the first note full travel. */
+export function startFor(firstNoteAt, readyLeadMs) {
+  return Math.max(0, firstNoteAt - readyLeadMs);
 }

@@ -8,13 +8,7 @@ import { connectSocket, getSocket } from "../lib/socket.js";
 import { isAudioOnly } from "../lib/gameConfig.js";
 import { GameEngine } from "./gameplay/engine.js";
 import { FieldRenderer } from "./gameplay/renderer.js";
-import {
-  COUNT_IN_MS,
-  preRollFor,
-  readyLeadFor,
-  startFor,
-  travelFor
-} from "./gameplay/timing.js";
+import { COUNT_IN_MS, readyLeadFor, startFor, travelFor } from "./gameplay/timing.js";
 const DIFFICULTY_ORDER = ["easy", "normal", "hard"];
 
 const COMBO_CHANTS = {
@@ -92,7 +86,6 @@ export default function GameplayPageV2({
   const [summary, setSummary] = useState(null);
   const [runBest, setRunBest] = useState(0);
   const [autoPlaying, setAutoPlaying] = useState(false);
-  const [preRolling, setPreRolling] = useState(false);
   const [battleState, setBattleState] = useState(null);
   const [battleStartAt, setBattleStartAt] = useState(startParam);
   const [battleNotice, setBattleNotice] = useState("");
@@ -150,7 +143,7 @@ export default function GameplayPageV2({
   // Every run starts early enough that the first note is still on its way when
   // the count-in ends; a song that opens on a note gets a short silent run-in.
   const readyLeadMs = readyLeadFor(difficultyId, travelMs);
-  const startAt = startFor(firstNoteAt, chartState.startAt, readyLeadMs);
+  const startAt = startFor(firstNoteAt, readyLeadMs);
   const preRollMs = preRollFor(firstNoteAt, startAt, readyLeadMs);
   // The music video is the backdrop while a track has one; the cover stands in
   // when it doesn't.
@@ -207,10 +200,6 @@ export default function GameplayPageV2({
   const autoHeldRef = useRef([false, false, false, false]);
   const playbackStartRef = useRef(0);
   const clockRef = useRef({ lastRaw: -1, value: 0, at: 0 });
-  const preRollMsRef = useRef(0);
-  const preRollTimerRef = useRef(0);
-  const preRollLabelTimerRef = useRef(0);
-  preRollMsRef.current = preRollMs;
   const battleIdRef = useRef("");
   const battleStartRef = useRef(startParam);
   const battleSocketRef = useRef(null);
@@ -514,36 +503,17 @@ export default function GameplayPageV2({
     }
   }
 
-  function scheduleMedia(mediaAt, delayMs) {
-    if (preRollTimerRef.current) window.clearTimeout(preRollTimerRef.current);
-    if (delayMs <= 0) {
-      preRollTimerRef.current = 0;
-      startMedia(mediaAt);
-      return;
-    }
-    preRollTimerRef.current = window.setTimeout(() => {
-      preRollTimerRef.current = 0;
-      startMedia(mediaAt);
-    }, delayMs);
-  }
-
-  // The count-in ends here. When the chart opens too close to the start of the
-  // audio, the field runs silently first so the opening gem still travels the
-  // whole highway before anyone is asked to hit it.
+  // The count-in ends here and the music starts with it: the track is scheduled
+  // on the AudioContext clock at the chart's start position, so the first note
+  // already has its full travel — nothing waits in silence after the countdown.
   function beginPlay() {
-    const mediaAt = playbackStartRef.current;
-    const preRoll = preRollMsRef.current;
-    const origin = mediaAt - preRoll;
+    const origin = playbackStartRef.current;
     fallbackStartRef.current = performance.now() - origin;
     clockRef.current = { lastRaw: -1, value: origin, at: performance.now() };
     phaseRef.current = "playing";
     setPhase("playing");
     hapticSafe("countdown-go");
 
-    // Music starts exactly when the chart says it should: the decoded track is
-    // scheduled on the AudioContext clock (sample-accurate), so the first note
-    // and the first beat land together instead of the music dropping in late
-    // after the element finished seeking and spinning up.
     ensureAudioContext();
     const musicCtx = audioCtxRef.current;
     const musicBuffer = musicBufferRef.current;
@@ -558,33 +528,17 @@ export default function GameplayPageV2({
       const source = musicCtx.createBufferSource();
       source.buffer = musicBuffer.buffer;
       source.connect(musicCtx.destination);
-      source.start(
-        musicCtx.currentTime + preRoll / 1000,
-        Math.max(0, mediaAt) / 1000
-      );
+      source.start(musicCtx.currentTime, Math.max(0, origin) / 1000);
       musicSourceRef.current = source;
       musicClockRef.current = {
-        anchorCtxTime: musicCtx.currentTime + preRoll / 1000,
-        anchorSongMs: mediaAt,
+        anchorCtxTime: musicCtx.currentTime,
+        anchorSongMs: origin,
         outputLatencyMs:
           (musicCtx.outputLatency || musicCtx.baseLatency || 0) * 1000
       };
     }
 
-    // Say "get ready" out loud while the field runs before the music does, so
-    // the silent lead-in reads as a count-in rather than a broken start.
-    if (preRollLabelTimerRef.current) window.clearTimeout(preRollLabelTimerRef.current);
-    if (preRoll > 0) {
-      setPreRolling(true);
-      preRollLabelTimerRef.current = window.setTimeout(() => {
-        preRollLabelTimerRef.current = 0;
-        setPreRolling(false);
-      }, preRoll);
-    } else {
-      setPreRolling(false);
-    }
-
-    scheduleMedia(mediaAt, preRoll);
+    startMedia(origin);
   }
 
   function finishRun(reason) {
@@ -664,10 +618,6 @@ export default function GameplayPageV2({
       musicSourceRef.current = null;
       musicClockRef.current = null;
     }
-    if (preRollTimerRef.current) {
-      window.clearTimeout(preRollTimerRef.current);
-      preRollTimerRef.current = 0;
-    }
     try {
       if (audioRef.current) audioRef.current.pause();
       if (videoRef.current) videoRef.current.pause();
@@ -681,7 +631,6 @@ export default function GameplayPageV2({
   function resumeSong() {
     if (phaseRef.current !== "paused") return;
     const at = pausedAtRef.current;
-    const mediaAt = playbackStartRef.current;
     fallbackStartRef.current = performance.now() - at;
     clockRef.current = { lastRaw: -1, value: at, at: performance.now() };
 
@@ -693,29 +642,14 @@ export default function GameplayPageV2({
       const source = musicCtx.createBufferSource();
       source.buffer = musicBuffer.buffer;
       source.connect(musicCtx.destination);
-      const latencyMs =
-        (musicCtx.outputLatency || musicCtx.baseLatency || 0) * 1000;
-      if (at < mediaAt) {
-        // Resumed during the silent lead-in: music still waits for what is
-        // left of it.
-        source.start(
-          musicCtx.currentTime + (mediaAt - at) / 1000,
-          Math.max(0, mediaAt) / 1000
-        );
-        musicClockRef.current = {
-          anchorCtxTime: musicCtx.currentTime + (mediaAt - at) / 1000,
-          anchorSongMs: mediaAt,
-          outputLatencyMs: latencyMs
-        };
-      } else {
-        source.start(musicCtx.currentTime, Math.max(0, at) / 1000);
-        musicClockRef.current = {
-          anchorCtxTime: musicCtx.currentTime,
-          anchorSongMs: at,
-          outputLatencyMs: latencyMs
-        };
-      }
+      source.start(musicCtx.currentTime, Math.max(0, at) / 1000);
       musicSourceRef.current = source;
+      musicClockRef.current = {
+        anchorCtxTime: musicCtx.currentTime,
+        anchorSongMs: at,
+        outputLatencyMs:
+          (musicCtx.outputLatency || musicCtx.baseLatency || 0) * 1000
+      };
       phaseRef.current = "playing";
       setPhase("playing");
       return;
@@ -781,15 +715,6 @@ export default function GameplayPageV2({
 
   function startRun(options) {
     if (!chart.length) return;
-    if (preRollTimerRef.current) {
-      window.clearTimeout(preRollTimerRef.current);
-      preRollTimerRef.current = 0;
-    }
-    if (preRollLabelTimerRef.current) {
-      window.clearTimeout(preRollLabelTimerRef.current);
-      preRollLabelTimerRef.current = 0;
-    }
-    setPreRolling(false);
     ensureAudioContext();
     unlockAudio();
 
@@ -1145,8 +1070,6 @@ export default function GameplayPageV2({
   // Stop media and audio when leaving the route.
   useEffect(() => {
     return () => {
-      if (preRollTimerRef.current) window.clearTimeout(preRollTimerRef.current);
-      if (preRollLabelTimerRef.current) window.clearTimeout(preRollLabelTimerRef.current);
       try {
         if (audioRef.current) audioRef.current.pause();
         if (videoRef.current) videoRef.current.pause();
@@ -1321,10 +1244,6 @@ export default function GameplayPageV2({
             <span key={countdown}>{countdown}</span>
           </div>
         )}
-
-        {phase === "playing" && preRolling ? (
-          <div className="gp-preroll">GET READY</div>
-        ) : null}
       </div>
 
       {song.audioUrl ? (
