@@ -50,7 +50,7 @@ export class FieldRenderer {
     this.ctx = canvas.getContext("2d");
     this.particles = [];
     this.floaters = [];
-    this.confetti = [];
+    this.confettiPieces = [];
     this.shake = 0;
     this.comboPop = 0;
     this.lastCombo = 0;
@@ -200,10 +200,14 @@ export class FieldRenderer {
   }
 
   spawnFloater(config) {
+    // Keep judgement popups fully on screen and stop two popups from
+    // painting on top of each other ("PERFEC PERFECT").
+    const margin = Math.max(46, this.w * 0.16);
+    const stagger = Math.min(this.floaters.length, 2) * 24;
     this.floaters.push({
       text: config.text,
-      x: config.x,
-      y: config.y,
+      x: Math.min(Math.max(config.x, margin), this.w - margin),
+      y: config.y - stagger,
       color: config.color,
       size: config.size,
       life: config.life,
@@ -405,7 +409,7 @@ export class FieldRenderer {
   confetti() {
     const colors = LANE_COLORS.concat(["#fff6e4", "#ffd23f"]);
     for (let i = 0; i < 120; i += 1) {
-      this.confetti.push({
+      this.confettiPieces.push({
         x: Math.random() * this.w,
         y: -30 - Math.random() * this.h * 0.5,
         vx: (Math.random() - 0.5) * 90,
@@ -420,7 +424,7 @@ export class FieldRenderer {
   }
 
   // ── Frame ───────────────────────────────────────────────────────────────
-  draw({ engine, now, dt, travelMs, beatMs, chartEnd, phase, startAt = 0 }) {
+  draw({ engine, now, dt, travelMs, beatMs, chartEnd, phase, startAt = 0, backdropVideo = null, videoOpacity = 0 }) {
     const ctx = this.ctx;
     const dtS = clamp((Number(dt) || 16) / 1000, 0, 0.06);
     const drawNow = Number.isFinite(now) ? now : 0;
@@ -437,7 +441,9 @@ export class FieldRenderer {
       cx: this.cx,
       now: stageNow,
       beatMs: beat,
-      heat: this.heat || 0
+      heat: this.heat || 0,
+      backdropVideo,
+      videoOpacity
     });
 
     const combo = engine ? engine.combo : 0;
@@ -912,11 +918,11 @@ export class FieldRenderer {
   }
 
   drawConfetti(dtS) {
-    if (!this.confetti.length) return;
+    if (!this.confettiPieces.length) return;
     const ctx = this.ctx;
-    this.confetti = this.confetti.filter((piece) => piece.y < this.h + 60);
+    this.confettiPieces = this.confettiPieces.filter((piece) => piece.y < this.h + 60);
 
-    for (const piece of this.confetti) {
+    for (const piece of this.confettiPieces) {
       piece.x += piece.vx * dtS;
       piece.y += piece.vy * dtS;
       piece.vy += 60 * dtS;
@@ -971,7 +977,7 @@ export class FieldRenderer {
       ctx.shadowBlur = 8;
       ctx.font = "800 " + Math.round(size * 0.17) + "px " + BODY_FONT;
       ctx.fillStyle = "rgba(255,201,60,0.95)";
-      ctx.fillText("COMBO", this.cx, y - size * 0.62);
+      ctx.fillText("COMBO", this.cx, y - size * 1.05);
     }
 
     ctx.shadowBlur = 0;

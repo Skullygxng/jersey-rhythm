@@ -1187,6 +1187,21 @@ p {
   pointer-events: none;
 }
 
+/* A scrim behind the top bar so falling gems cannot wash the title out. */
+.gp-top::before {
+  content: "";
+  position: absolute;
+  inset: -12px -18px -26px -18px;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 5, 12, 0.88) 0%,
+    rgba(8, 5, 12, 0.44) 62%,
+    rgba(8, 5, 12, 0) 100%
+  );
+  pointer-events: none;
+  z-index: -1;
+}
+
 .gp-chip {
   pointer-events: auto;
   padding: 8px 13px;
@@ -1237,6 +1252,15 @@ p {
   pointer-events: none;
 }
 
+.gp-countdown::before {
+  content: "";
+  position: absolute;
+  width: min(68vw, 320px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(8, 5, 12, 0.82) 38%, rgba(8, 5, 12, 0) 72%);
+}
+
 .gp-countdown span {
   font-family: var(--display);
   font-size: clamp(96px, 34vw, 190px);
@@ -1246,7 +1270,7 @@ p {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 10px 30px rgba(255, 45, 120, 0.5));
+  filter: drop-shadow(0 10px 30px rgba(255, 45, 120, 0.6));
   animation: gp-count 0.9s cubic-bezier(0.2, 1.5, 0.4, 1);
 }
 
@@ -1260,8 +1284,8 @@ p {
     opacity: 1;
   }
   100% {
-    transform: scale(0.92);
-    opacity: 0.1;
+    transform: scale(0.96);
+    opacity: 0.9;
   }
 }
 

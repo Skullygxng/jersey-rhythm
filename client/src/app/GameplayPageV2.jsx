@@ -368,27 +368,35 @@ export default function GameplayPageV2({
   function songClock() {
     const audio = audioRef.current;
     const clock = clockRef.current;
+    const glide = () => clock.value + (performance.now() - clock.at);
 
     if (audio && !audio.paused && Number.isFinite(audio.currentTime)) {
       const raw = audio.currentTime * 1000;
       if (raw < playbackStartRef.current - 250) {
         // The element has not finished seeking to the trimmed start yet.
-        return performance.now() - fallbackStartRef.current;
+        return glide();
+      }
+      // An element jump far from the expected position (e.g. the stale
+      // end-of-song position right after RUN IT BACK, or a seek that has not
+      // landed yet) must not be trusted: glide on the smooth clock until the
+      // element settles back in.
+      const expected = clock.value > 0 ? clock.value + (performance.now() - clock.at) : raw;
+      if (Math.abs(raw - expected) > 400) {
+        return glide();
       }
       if (raw !== clock.lastRaw) {
         clock.lastRaw = raw;
         clock.value = raw;
         clock.at = performance.now();
-      } else if (clock.value > 0) {
-        // Audio time updates in steps; extrapolate between updates so the
-        // field glides instead of stuttering.
-        const drift = performance.now() - clock.at;
-        return Math.min(raw + 60, clock.value + drift);
+        return Math.min(raw + 250, clock.value + (performance.now() - clock.at));
       }
-      if (clock.value > 0) return clock.value;
+      // Audio time updates in steps; extrapolate between updates so the field
+      // glides instead of stuttering. Capped so a stalled element can only
+      // drag the clock a quarter second ahead at most.
+      return Math.min(raw + 250, clock.value + (performance.now() - clock.at));
     }
 
-    return performance.now() - fallbackStartRef.current;
+    return glide();
   }
 
   function consumeEvents(events) {
@@ -690,6 +698,10 @@ export default function GameplayPageV2({
     autoplayRef.current = autoplay;
     setAutoPlaying(autoplay);
     playbackStartRef.current = startAt;
+    // Reset the run clocks: after a finished run the audio element still sits
+    // at the song's end, and a stale clock here instant-fails the whole run.
+    fallbackStartRef.current = performance.now() - startAt;
+    clockRef.current = { lastRaw: -1, value: startAt, at: performance.now() };
     autoHeldRef.current = [false, false, false, false];
 
     const engine = new GameEngine({ chart, offsetMs });
@@ -703,7 +715,7 @@ export default function GameplayPageV2({
     if (renderer) {
       renderer.particles.length = 0;
       renderer.floaters.length = 0;
-      renderer.confetti.length = 0;
+      renderer.confettiPieces.length = 0;
       renderer.shake = 0;
       renderer.lastCombo = 0;
       renderer.laneMiss = [0, 0, 0, 0];
@@ -891,6 +903,7 @@ export default function GameplayPageV2({
           if (label !== countdownLabelRef.current) {
             countdownLabelRef.current = label;
             setCountdown(label);
+            playSfx("countdown");
             hapticSafe("countdown");
           }
         }
@@ -922,7 +935,12 @@ export default function GameplayPageV2({
         beatMs: config.beatMs,
         chartEnd: config.chartEnd,
         startAt: config.startAt,
-        phase: phaseNow
+        phase: phaseNow,
+        backdropVideo: videoRef.current,
+        videoOpacity: (() => {
+          const value = settingsRef.current.videoOpacity;
+          return value == null ? 0.35 : clamp(Number(value), 0, 1);
+        })()
       });
 
       raf = requestAnimationFrame(frame);
@@ -1137,7 +1155,7 @@ export default function GameplayPageV2({
             <span>
               {autoPlaying
                 ? "WATCH MODE"
-                : difficulty.label + " · " + Math.round(chartBpm) + " BPM"}
+                : difficulty.label + " · " + Math.round(Number(difficulty?.bpm) || chartBpm) + " BPM"}
             </span>
           </div>
           <button
@@ -1218,7 +1236,7 @@ export default function GameplayPageV2({
         <div className="gp-overlay gp-ready">
           <div
             className="gp-poster"
-            style={song.coverUrl ? { backgroundImage: "url(" + song.coverUrl + ")" } : undefined}
+            style={song.coverUrl ? { backgroundImage: "url(\"" + song.coverUrl + "\")" } : undefined}
           >
             <div className="gp-poster-scrim" />
             <div className="gp-poster-body">
@@ -1242,7 +1260,7 @@ export default function GameplayPageV2({
               ) : (
                 <>
                   <div className="gp-prepared">
-                    <span>{Math.round(chartBpm)} BPM</span>
+                    <span>{Math.round(Number(difficulty?.bpm) || chartBpm)} BPM</span>
                     <span>{chartState.noteCount} NOTES</span>
                     <span>{holdCount} HOLDS</span>
                     <span>{bestScore > 0 ? "BEST " + formatScore(bestScore) : "NO SCORE"}</span>
@@ -1311,7 +1329,7 @@ export default function GameplayPageV2({
               <button className="btn btn-primary" type="button" onClick={resumeSong}>
                 RESUME
               </button>
-              <button className="btn btn-ghost" type="button" onClick={startRun}>
+              <button className="btn btn-ghost" type="button" onClick={() => startRun({ autoplay: autoPlaying })}>
                 RESTART
               </button>
               <button className="btn btn-ghost" type="button" onClick={exitRun}>
@@ -1343,6 +1361,8 @@ export default function GameplayPageV2({
 
             {summary.failed ? (
               <div className="gp-rank muted">NOT SAVED — RUN FAILED</div>
+            ) : autoPlaying ? (
+              <div className="gp-rank muted">WATCH MODE — NOT SAVED</div>
             ) : (
               <div className="gp-rank muted">SAVED ON THIS DEVICE</div>
             )}
@@ -1396,7 +1416,7 @@ export default function GameplayPageV2({
             {isNewRecord ? <div className="gp-new-record">PERSONAL BEST</div> : null}
 
             <div className="gp-panel-actions">
-              <button className="btn btn-primary" type="button" onClick={startRun}>
+              <button className="btn btn-primary" type="button" onClick={() => startRun({ autoplay: autoPlaying })}>
                 RUN IT BACK
               </button>
               <button className="btn btn-ghost" type="button" onClick={exitRun}>

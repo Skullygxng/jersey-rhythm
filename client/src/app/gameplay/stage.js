@@ -35,7 +35,7 @@ function kickPulse(now, beat) {
 }
 
 export function drawStage(ctx, options) {
-  const { w, h, hitY, cx, now, beatMs, heat } = options;
+  const { w, h, hitY, cx, now, beatMs, heat, backdropVideo, videoOpacity } = options;
   const beat = beatMs > 0 ? beatMs : 420;
   const kick = kickPulse(now, beat);
   const bar = now / (beat * 4);
@@ -48,26 +48,47 @@ export function drawStage(ctx, options) {
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, w, h);
 
-  // Brick wall: a real CC0 texture when it has loaded, procedural courses
-  // otherwise, so the venue never pops in late.
+  // Wall art: when the song has a music video and the player wants a backdrop,
+  // its frame becomes the wall (dimmed further by the shade below). Otherwise
+  // a real CC0 brick texture when it has loaded, procedural courses otherwise,
+  // so the venue never pops in late.
   const wallHeight = hitY * 0.92;
-  const pattern = getWallPattern(ctx);
-  if (pattern) {
+  const videoLive =
+    backdropVideo &&
+    backdropVideo.readyState >= 2 &&
+    backdropVideo.videoWidth > 0 &&
+    videoOpacity > 0;
+  if (videoLive) {
+    const va = backdropVideo.videoWidth / backdropVideo.videoHeight;
+    let dw = wallHeight * va;
+    let dh = wallHeight;
+    if (dw < w) {
+      dh = w / va;
+      dw = w;
+    }
     ctx.save();
-    ctx.globalAlpha = 0.3;
-    ctx.scale(0.5, 0.5);
-    ctx.fillStyle = pattern;
-    ctx.fillRect(0, 0, w * 2, wallHeight * 2);
+    ctx.globalAlpha = videoOpacity;
+    ctx.drawImage(backdropVideo, (w - dw) / 2, wallHeight - dh, dw, dh);
     ctx.restore();
   } else {
-    const brickH = Math.max(9, h * 0.017);
-    const brickW = brickH * 2.4;
-    ctx.fillStyle = BRICK;
-    for (let row = 0; row * brickH < wallHeight; row += 1) {
-      const y = row * brickH;
-      const offset = row % 2 === 0 ? 0 : brickW / 2;
-      for (let x = -brickW; x < w + brickW; x += brickW) {
-        ctx.fillRect(x + offset, y, brickW - 1.5, brickH - 1.5);
+    const pattern = getWallPattern(ctx);
+    if (pattern) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.scale(0.5, 0.5);
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, w * 2, wallHeight * 2);
+      ctx.restore();
+    } else {
+      const brickH = Math.max(9, h * 0.017);
+      const brickW = brickH * 2.4;
+      ctx.fillStyle = BRICK;
+      for (let row = 0; row * brickH < wallHeight; row += 1) {
+        const y = row * brickH;
+        const offset = row % 2 === 0 ? 0 : brickW / 2;
+        for (let x = -brickW; x < w + brickW; x += brickW) {
+          ctx.fillRect(x + offset, y, brickW - 1.5, brickH - 1.5);
+        }
       }
     }
   }
