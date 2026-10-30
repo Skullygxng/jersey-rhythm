@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { songs, isPlayableDifficulty } from "../data/songLibrary.js";
 import { haptic } from "../../../src/haptics.js";
-import { resolveChart } from "../lib/autoChart.js";
+import { resolveChart, decodeTrackBuffer } from "../lib/autoChart.js";
 import { connectSocket, getSocket } from "../lib/socket.js";
 import { isAudioOnly } from "../lib/gameConfig.js";
 import { GameEngine } from "./gameplay/engine.js";
@@ -106,6 +106,11 @@ export default function GameplayPageV2({
   const fieldRef = useRef(null);
   const audioRef = useRef(null);
   const videoRef = useRef(null);
+  // The decoded track and its live source: the AudioContext clock is the
+  // master clock for a run (see GAMEFEEL.md).
+  const musicBufferRef = useRef(null);
+  const musicSourceRef = useRef(null);
+  const musicClockRef = useRef(null);
   const audioCtxRef = useRef(null);
   const pointersRef = useRef(new Map());
   const pointerUpRef = useRef(null);
@@ -370,6 +375,19 @@ export default function GameplayPageV2({
     const clock = clockRef.current;
     const glide = () => clock.value + (performance.now() - clock.at);
 
+    // Master clock: the decoded track playing through the AudioContext. It is
+    // scheduled on the same timeline as the notes, so music and field can never
+    // drift apart the way the <audio> element (chunked, late) made them.
+    const music = musicClockRef.current;
+    const musicCtx = audioCtxRef.current;
+    if (music && musicCtx && musicCtx.state === "running") {
+      return (
+        music.anchorSongMs -
+        (music.anchorCtxTime - musicCtx.currentTime) * 1000 -
+        music.outputLatencyMs
+      );
+    }
+
     if (audio && !audio.paused && Number.isFinite(audio.currentTime)) {
       const raw = audio.currentTime * 1000;
       if (raw < playbackStartRef.current - 250) {
@@ -475,11 +493,6 @@ export default function GameplayPageV2({
 
   function startMedia(at) {
     try {
-      const audio = audioRef.current;
-      if (audio) {
-        audio.currentTime = Math.max(0, at) / 1000;
-        audio.play().catch(() => {});
-      }
       const video = videoRef.current;
       if (video) {
         const seconds = Math.max(0, at) / 1000;
@@ -487,6 +500,14 @@ export default function GameplayPageV2({
           video.currentTime = seconds % video.duration;
         }
         video.play().catch(() => {});
+      }
+      // In buffer mode the AudioContext owns the music: playing the element
+      // too would double the track.
+      if (musicClockRef.current) return;
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = Math.max(0, at) / 1000;
+        audio.play().catch(() => {});
       }
     } catch {
       /* media is optional */
@@ -519,6 +540,37 @@ export default function GameplayPageV2({
     setPhase("playing");
     hapticSafe("countdown-go");
 
+    // Music starts exactly when the chart says it should: the decoded track is
+    // scheduled on the AudioContext clock (sample-accurate), so the first note
+    // and the first beat land together instead of the music dropping in late
+    // after the element finished seeking and spinning up.
+    ensureAudioContext();
+    const musicCtx = audioCtxRef.current;
+    const musicBuffer = musicBufferRef.current;
+    if (musicCtx && musicBuffer && musicBuffer.songId === song?.id && musicCtx.state === "running") {
+      if (musicSourceRef.current) {
+        try {
+          musicSourceRef.current.stop();
+        } catch {
+          /* already stopped */
+        }
+      }
+      const source = musicCtx.createBufferSource();
+      source.buffer = musicBuffer.buffer;
+      source.connect(musicCtx.destination);
+      source.start(
+        musicCtx.currentTime + preRoll / 1000,
+        Math.max(0, mediaAt) / 1000
+      );
+      musicSourceRef.current = source;
+      musicClockRef.current = {
+        anchorCtxTime: musicCtx.currentTime + preRoll / 1000,
+        anchorSongMs: mediaAt,
+        outputLatencyMs:
+          (musicCtx.outputLatency || musicCtx.baseLatency || 0) * 1000
+      };
+    }
+
     // Say "get ready" out loud while the field runs before the music does, so
     // the silent lead-in reads as a count-in rather than a broken start.
     if (preRollLabelTimerRef.current) window.clearTimeout(preRollLabelTimerRef.current);
@@ -549,6 +601,7 @@ export default function GameplayPageV2({
     if (renderer && reason !== "failed") renderer.confetti();
 
     try {
+      if (musicSourceRef.current) musicSourceRef.current.stop();
       if (audioRef.current) audioRef.current.pause();
       if (videoRef.current) videoRef.current.pause();
     } catch {
@@ -602,6 +655,15 @@ export default function GameplayPageV2({
   function pauseSong() {
     if (phaseRef.current !== "playing") return;
     pausedAtRef.current = songClock();
+    if (musicClockRef.current) {
+      try {
+        musicSourceRef.current.stop();
+      } catch {
+        /* already stopped */
+      }
+      musicSourceRef.current = null;
+      musicClockRef.current = null;
+    }
     if (preRollTimerRef.current) {
       window.clearTimeout(preRollTimerRef.current);
       preRollTimerRef.current = 0;
@@ -622,6 +684,42 @@ export default function GameplayPageV2({
     const mediaAt = playbackStartRef.current;
     fallbackStartRef.current = performance.now() - at;
     clockRef.current = { lastRaw: -1, value: at, at: performance.now() };
+
+    // Resume the decoded track on the AudioContext clock when it is available.
+    ensureAudioContext();
+    const musicCtx = audioCtxRef.current;
+    const musicBuffer = musicBufferRef.current;
+    if (musicCtx && musicBuffer && musicBuffer.songId === song?.id && musicCtx.state === "running") {
+      const source = musicCtx.createBufferSource();
+      source.buffer = musicBuffer.buffer;
+      source.connect(musicCtx.destination);
+      const latencyMs =
+        (musicCtx.outputLatency || musicCtx.baseLatency || 0) * 1000;
+      if (at < mediaAt) {
+        // Resumed during the silent lead-in: music still waits for what is
+        // left of it.
+        source.start(
+          musicCtx.currentTime + (mediaAt - at) / 1000,
+          Math.max(0, mediaAt) / 1000
+        );
+        musicClockRef.current = {
+          anchorCtxTime: musicCtx.currentTime + (mediaAt - at) / 1000,
+          anchorSongMs: mediaAt,
+          outputLatencyMs: latencyMs
+        };
+      } else {
+        source.start(musicCtx.currentTime, Math.max(0, at) / 1000);
+        musicClockRef.current = {
+          anchorCtxTime: musicCtx.currentTime,
+          anchorSongMs: at,
+          outputLatencyMs: latencyMs
+        };
+      }
+      musicSourceRef.current = source;
+      phaseRef.current = "playing";
+      setPhase("playing");
+      return;
+    }
 
     // Paused during the silent lead-in: keep the music waiting for what is
     // left of it instead of dropping it in early.
@@ -644,6 +742,7 @@ export default function GameplayPageV2({
       preRollTimerRef.current = 0;
     }
     try {
+      if (musicSourceRef.current) musicSourceRef.current.stop();
       if (audioRef.current) audioRef.current.pause();
       if (videoRef.current) videoRef.current.pause();
     } catch {
@@ -702,6 +801,28 @@ export default function GameplayPageV2({
     // at the song's end, and a stale clock here instant-fails the whole run.
     fallbackStartRef.current = performance.now() - startAt;
     clockRef.current = { lastRaw: -1, value: startAt, at: performance.now() };
+    // Stop the previous run's buffer source and get the decoded track ready:
+    // a fresh buffer start is sample-accurate, so music, notes and countdown
+    // share one timeline instead of the element catching up late.
+    if (musicSourceRef.current) {
+      try {
+        musicSourceRef.current.stop();
+      } catch {
+        /* already stopped */
+      }
+      musicSourceRef.current = null;
+    }
+    musicClockRef.current = null;
+    musicBufferRef.current = null;
+    if (song) {
+      decodeTrackBuffer(song)
+        .then((buffer) => {
+          musicBufferRef.current = { songId: song.id, buffer };
+        })
+        .catch(() => {
+          musicBufferRef.current = null;
+        });
+    }
     autoHeldRef.current = [false, false, false, false];
 
     const engine = new GameEngine({ chart, offsetMs });

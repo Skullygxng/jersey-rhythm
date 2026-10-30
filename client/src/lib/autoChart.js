@@ -170,6 +170,31 @@ export function clearAutoChartCache() {
   }
 }
 
+// The full decoded track, so a run can play it through an AudioBufferSourceNode
+// on the AudioContext clock instead of the <audio> element: the element starts
+// late (seek + decode spin-up on the main thread), which skewed the opening
+// phrase of every level against the countdown.
+const trackBuffers = new Map();
+
+export async function decodeTrackBuffer(song) {
+  if (!song?.audioUrl) throw new Error("This track has no audio file");
+  if (trackBuffers.has(song.audioUrl)) return trackBuffers.get(song.audioUrl);
+
+  const response = await fetch(song.audioUrl);
+  if (!response.ok) throw new Error("Could not load the audio file (" + response.status + ")");
+
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength < 1024) throw new Error("The audio file is empty");
+
+  const buffer = await decodeWithTimeout(bytes);
+  trackBuffers.set(song.audioUrl, buffer);
+  // Keep only the most recent decoded track: buffers are tens of MB of PCM.
+  if (trackBuffers.size > 1) {
+    trackBuffers.delete(trackBuffers.keys().next().value);
+  }
+  return buffer;
+}
+
 async function decodeToMono(song) {
   if (!song?.audioUrl) throw new Error("This track has no audio file");
 
