@@ -141,10 +141,10 @@ export default function GameplayPageV2({
   }, [chart, offsetMs]);
 
   // Every run starts early enough that the first note is still on its way when
-  // the count-in ends; a song that opens on a note gets a short silent run-in.
+  // the count-in ends — and the music starts at that same spot in the track, so
+  // there is never silence between GO and the first note.
   const readyLeadMs = readyLeadFor(difficultyId, travelMs);
   const startAt = startFor(firstNoteAt, readyLeadMs);
-  const preRollMs = preRollFor(firstNoteAt, startAt, readyLeadMs);
   // The music video is the backdrop while a track has one; the cover stands in
   // when it doesn't.
   const showVideo = Boolean(videoUrl);
@@ -671,10 +671,6 @@ export default function GameplayPageV2({
   }
 
   function exitRun() {
-    if (preRollTimerRef.current) {
-      window.clearTimeout(preRollTimerRef.current);
-      preRollTimerRef.current = 0;
-    }
     try {
       if (musicSourceRef.current) musicSourceRef.current.stop();
       if (audioRef.current) audioRef.current.pause();
