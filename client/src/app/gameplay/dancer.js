@@ -142,7 +142,7 @@ function drawDancer(ctx, options) {
 
   // Off-phase duet: each member's pose phase is pushed by their index, but the
   // five-kick stays global — the crew dances to the same beat, not metronomes.
-  const phase = (((beatPos + options.phaseOffset) % PHRASE_BEATS) + PHRASE_BEATS) % PHRASE_BEATS;
+  const phase = (((beatPos + (options.phaseOffset || 0)) % PHRASE_BEATS) + PHRASE_BEATS) % PHRASE_BEATS;
   const phraseT = phase / PHRASE_BEATS;
   const moveIndex = options.moveIndex % 5;
 
@@ -338,7 +338,8 @@ export function drawDanceCrew(ctx, options) {
       ground: hitY + 4,
       side: member.side,
       scale: scale * (far ? 0.78 : 1),
-      beatPos: beatPos + i * 0.5,
+      beatPos,
+      phaseOffset: i * 0.5,
       kick,
       moveIndex: move,
       energy: options.energy,
