@@ -700,7 +700,8 @@ export default function GameplayPageV2({
     if (battleIdRef.current && battleSocketRef.current) {
       battleSocketRef.current.emit("battle:leave", { roomId: battleIdRef.current });
     }
-    navigate("/play");
+    // Back to the track you were playing, not the global list.
+    navigate("/song/" + (song?.id || songId));
   }
 
   function unlockAudio() {

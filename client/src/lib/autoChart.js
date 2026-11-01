@@ -743,6 +743,58 @@ function placeHolds(notes, analysis, difficultyId, beatMs) {
   }
 }
 
+/**
+ * Nothing may enter a lane while that lane's ribbon is still burning: the
+ * player is holding the lane and cannot tap. Live playtesting caught stacked
+ * ribbons (Vibe Easy lane 1, Heartbroken Normal lane 4) — autoplay dropped
+ * them and a human has no free finger for it. Pushed notes can themselves
+ * land on a later ribbon, so the pass repeats (sorting by time each round)
+ * until a full pass makes no move.
+ */
+function dedupeLaneCollisions(notes) {
+  for (let pass = 0; pass < 10; pass += 1) {
+    notes.sort((a, b) => a.time - b.time);
+    let moved = 0;
+
+    for (let i = 0; i < notes.length; i += 1) {
+      const hold = notes[i];
+      if (hold.type !== "hold" || !hold.duration) continue;
+      const holdEnd = hold.time + hold.duration;
+
+      for (let j = i + 1; j < notes.length; j += 1) {
+        const other = notes[j];
+        if (other.lane !== hold.lane) continue;
+        if (other.time >= holdEnd) break;
+
+        if (other.type === "hold") {
+          // Demote to a tap: its own span is handled on its own pass.
+          other.type = "tap";
+          delete other.duration;
+        }
+        // Push the colliding note forward until its slot is clear of every
+        // other note in the lane (which may include earlier pushed notes).
+        let slot = holdEnd + 120;
+        const laneTimes = notes
+          .filter((note) => note !== other && note.lane === other.lane)
+          .map((note) => note.time);
+        while (laneTimes.some((time) => Math.abs(time - slot) < 120)) {
+          slot += 60;
+        }
+        other.time = Math.round(slot);
+        moved += 1;
+      }
+    }
+
+    if (moved === 0) break;
+  }
+
+  // Re-sort and hand out fresh ids.
+  notes.sort((a, b) => a.time - b.time);
+  notes.forEach((note, index) => {
+    note.id = index + 1;
+  });
+}
+
 async function analyseSong(song, onStage) {
   const cacheKey = "jr-analysis-" + AUTO_CHART_VERSION + ":" + song.id;
   const cached = analysisCache.get(cacheKey);
@@ -787,6 +839,7 @@ function buildChart(analysis, difficultyId, songId) {
   );
   const notes = assignLanes(selected, difficultyId, songId);
   placeHolds(notes, analysis, difficultyId, beatMs);
+  dedupeLaneCollisions(notes);
 
   const chart = notes
     .map((note, index) => {
@@ -899,7 +952,8 @@ export async function resolveChart(song, difficultyId, options) {
   }
 }
 
-// Test surface: assignLanes and buildSections are pure functions over
-// synthetic points, so scripts/testAutoChart.mjs can regression-test phrase
-// recognition and section normalization without touching audio.
-export { assignLanes, buildSections };
+// Test surface: assignLanes, buildSections and dedupeLaneCollisions are pure
+// functions over synthetic data, so scripts/testAutoChart.mjs can
+// regression-test phrase recognition, section normalization and lane-collision
+// cleanup without touching audio.
+export { assignLanes, buildSections, dedupeLaneCollisions };
