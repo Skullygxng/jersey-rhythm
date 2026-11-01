@@ -674,15 +674,9 @@ export default function GameplayPageV2({
       return;
     }
 
-    // Paused during the silent lead-in: keep the music waiting for what is
-    // left of it instead of dropping it in early.
-    if (at < mediaAt) {
-      phaseRef.current = "playing";
-      setPhase("playing");
-      scheduleMedia(mediaAt, mediaAt - at);
-      return;
-    }
-
+    // Not on the buffer path (context suspended, or no buffer): fall through
+    // to the element. It starts where the run paused — there is no silent
+    // lead-in anymore, so no delayed start to wait for.
     startMedia(at);
 
     phaseRef.current = "playing";
