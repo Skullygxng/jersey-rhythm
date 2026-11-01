@@ -62,6 +62,9 @@ export class FieldRenderer {
     this.danceSlump = 0;
     this.danceSlumpSide = 0;
     this.danceEnergy = 0;
+    // 0..1 escalation into the FEVER crew: past the midpoint two more dancers
+    // have slid in and everyone rides their biggest move.
+    this.crewHeat = 0;
     this.resize();
   }
 
@@ -111,7 +114,7 @@ export class FieldRenderer {
     this.ctx.fillRect(0, 0, this.w, this.h);
   }
 
-  drawDancers(now, beatMs) {
+  drawDancers(now, beatMs, dtS) {
     drawDanceCrew(this.ctx, {
       w: this.w,
       h: this.h,
@@ -123,7 +126,9 @@ export class FieldRenderer {
       energy: this.fever ? 1 : this.danceEnergy,
       reaction: this.dancePoseLife,
       reactionSide: this.dancePose,
-      slump: this.danceSlump
+      slump: this.danceSlump,
+      fever: this.fever,
+      crewHeat: this.crewHeat
     });
   }
 
@@ -459,6 +464,12 @@ export class FieldRenderer {
     this.danceSlump = Math.max(0, this.danceSlump - dtS * 0.9);
     this.danceEnergy = clamp(combo / 40, 0, 1);
     this.fever = combo >= 30;
+    // Escalate the crew in and out over ~half a second either way.
+    this.crewHeat = clamp(
+      this.crewHeat + ((this.fever ? 1 : 0) - this.crewHeat) * Math.min(1, dtS * 3.4),
+      0,
+      1
+    );
     this.dropPunch = Math.max(0, (this.dropPunch || 0) - dtS * 2.6);
 
     ctx.save();
@@ -482,7 +493,7 @@ export class FieldRenderer {
     this.drawBeatGrid(drawNow, beat, travelMs);
 
     if (engine && (phase === "playing" || phase === "paused")) {
-      this.drawDancers(drawNow, beat);
+      this.drawDancers(drawNow, beat, dtS);
     }
 
     if (engine) {
