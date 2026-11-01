@@ -1,5 +1,34 @@
 export const importedSongs = [
   {
+    "id": "dj-jayhood-heartbroken-zoomix",
+    "title": "Heartbroken (Zoomix)",
+    "artist": "DJ Jayhood Feat Fetty Wap",
+    "audioUrl": "/media/imports/DJ%20Jayhood%20Feat%20Fetty%20Wap%20-%20Heartbroken%20(Zoomix).mp4",
+    "videoUrl": "/media/imports/DJ%20Jayhood%20Feat%20Fetty%20Wap%20-%20Heartbroken%20(Zoomix).mp4",
+    "coverUrl": "/media/imports/DJ%20Jayhood%20Feat%20Fetty%20Wap%20-%20Heartbroken%20(Zoomix).jpg",
+    "chartSource": "auto",
+    "difficulties": {
+      "easy": {
+        "label": "Easy",
+        "bpm": 0,
+        "auto": true,
+        "chart": []
+      },
+      "normal": {
+        "label": "Normal",
+        "bpm": 0,
+        "auto": true,
+        "chart": []
+      },
+      "hard": {
+        "label": "Hard",
+        "bpm": 0,
+        "auto": true,
+        "chart": []
+      }
+    }
+  },
+  {
     "id": "vip-rock-with-you-jersey-remix",
     "title": "Rock With You Jersey Remix",
     "artist": "VIP",

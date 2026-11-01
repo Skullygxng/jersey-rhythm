@@ -68,7 +68,18 @@ export default function GameplayPageV2({
   const song = songs.find((item) => item.id === songId);
   const difficulty =
     song?.difficulties?.[difficultyId || "normal"] || song?.difficulties?.normal;
-  const chartMode = settings.chartMode === "authored" ? "authored" : "auto";
+  // Chart source resolution:
+  // - "song" (default) follows the track's own chartSource — a song that ships
+  //   with a mapped chart plays that chart as the mapper intended;
+  // - "authored" and "auto" are explicit overrides, for A/B comparing the
+  //   shipped chart against a fresh one built from the audio.
+  // The active source is shown on the ready screen (SHIPPED CHART / MAPPED FROM
+  // AUDIO) so what is playing is always identifiable.
+  const songMode = song?.chartSource === "beatmap" ? "authored" : "auto";
+  const chartMode =
+    settings.chartMode === "authored" || settings.chartMode === "auto"
+      ? settings.chartMode
+      : songMode;
 
   const [chartState, setChartState] = useState({
     status: "loading",

@@ -19,7 +19,7 @@
 //  - long intros are trimmed so the first note arrives right after the
 //    count-in instead of after seconds of dead air.
 
-export const AUTO_CHART_VERSION = 5;
+export const AUTO_CHART_VERSION = 6;
 
 const SAMPLE_RATE = 11025;
 const HOP = 64;
@@ -426,10 +426,15 @@ function buildSections(points, beats) {
   const barCount = Math.max(1, Math.ceil((beats.length - 1) / 4));
   const barEnergy = new Array(barCount).fill(0);
   const barOnsets = new Array(barCount).fill(0);
+  // Points per bar: normally 16 (4 beats x 4 grid steps), but the trailing bar
+  // of a song can be partial. Normalizing by the real count is what keeps a
+  // half-finished bar from reading as quiet just because it is short.
+  const barPoints = new Array(barCount).fill(0);
 
   for (const point of points) {
     if (point.bar >= barCount) continue;
     barEnergy[point.bar] += point.low + point.high;
+    barPoints[point.bar] += 1;
     if (point.strength > 0.18) barOnsets[point.bar] += 1;
   }
 
@@ -439,7 +444,14 @@ function buildSections(points, beats) {
   const reference = all[Math.floor(all.length * 0.9)] || 1;
 
   const levels = barEnergy.map((sum, index) => {
-    const normalized = sum / 4 / reference;
+    // Sum divided by the bar's own point count: a true per-point mean against
+    // the 90th-percentile per-point value. The old code divided by a constant
+    // 4 while bars contribute 16 points, inflating every full bar 4x —
+    // nearly all bars then read as peaks and the density budgets flattened.
+    // Thresholds are calibrated for this corrected scale: with the reference
+    // set at the 90th percentile of per-point energy, loud bars land near
+    // 0.8-1.0, verses near 0.5-0.7, breaks below 0.3.
+    const normalized = sum / (barPoints[index] || 1) / reference;
     let level;
     if (normalized < 0.3) level = 0.3;
     else if (normalized < 0.55) level = 0.75;
@@ -598,8 +610,21 @@ function assignLanes(points, difficultyId, songId) {
     const phrasePoints = phrases.get(phraseKey).sort((a, b) => a.time - b.time);
     if (!phrasePoints.length) continue;
 
+    // Signature from positions RELATIVE to the phrase start (bar % 4), so the
+    // same rhythm in bars 0-3 and bars 4-7 produces the same signature and can
+    // reuse a template. Strength is bucketed to quarter-steps: onset envelopes
+    // wobble a little between repeats, and exact comparison would almost never
+    // match two plays of the same rhythm. Quarter-step buckets absorb that
+    // wobble while real dynamics differences (kick vs ghost note) still
+    // separate. Step stays exact — the rhythm itself must match.
     const signature = phrasePoints
-      .map((point) => point.bar + ":" + point.step + ":" + Math.round(point.strength * 10))
+      .map((point) =>
+        (point.bar % PHRASE_BARS) +
+        ":" +
+        point.step +
+        ":" +
+        Math.round(point.strength * 4)
+      )
       .join("|");
 
     let template;
@@ -874,3 +899,7 @@ export async function resolveChart(song, difficultyId, options) {
   }
 }
 
+// Test surface: assignLanes and buildSections are pure functions over
+// synthetic points, so scripts/testAutoChart.mjs can regression-test phrase
+// recognition and section normalization without touching audio.
+export { assignLanes, buildSections };

@@ -32,7 +32,7 @@ const DEFAULT_SETTINGS = {
   calibrationOffset: 0,
   hitSounds: true,
   haptics: true,
-  chartMode: "auto"
+  chartMode: "song"
 };
 
 const GRADE_RANK = { "S+": 6, S: 5, A: 4, B: 3, C: 2, D: 1 };
@@ -854,13 +854,26 @@ function SettingsPage({ settings, updateSetting, resetSettings }) {
       <div className="settings">
         <SettingRow
           label="Chart source"
-          value={settings.chartMode === "authored" ? "SHIPPED" : "AUTO"}
-          hint="Auto analyses each track and builds notes on a beat grid locked to the audio. Shipped uses the chart file that came with the song."
+          value={
+            settings.chartMode === "authored"
+              ? "SHIPPED"
+              : settings.chartMode === "auto"
+                ? "AUTO"
+                : "FOLLOW SONG"
+          }
+          hint="Follow Song plays the chart that came with the track where the mapper shipped one, and auto-builds the rest. Auto analyses every track on a beat grid; Shipped forces the shipped chart. The active source shows on every ready screen."
         >
           <div className="segmented">
             <button
               type="button"
-              className={settings.chartMode !== "authored" ? "is-active" : ""}
+              className={settings.chartMode === "song" || (settings.chartMode !== "authored" && settings.chartMode !== "auto") ? "is-active" : ""}
+              onClick={() => updateSetting("chartMode", "song")}
+            >
+              FOLLOW SONG
+            </button>
+            <button
+              type="button"
+              className={settings.chartMode === "auto" ? "is-active" : ""}
               onClick={() => updateSetting("chartMode", "auto")}
             >
               AUTO
