@@ -818,13 +818,15 @@ export default function GameplayPageV2({
         continue;
       }
 
+      // Holds: grab the head the moment it enters the grab window so the tail
+      // always counts as fully covered — grabbing up to 60ms into the ribbon
+      // cost coverage and dragged autoplay accuracy off 100%.
       const target = engine.notes.find(
         (note) =>
           note.lane === lane &&
           !note.resolved &&
-          !note.hold &&
-          note.start - now <= 10 &&
-          note.start - now >= -60
+          ((note.hold && note.start - now <= 170 && now < note.start + note.duration) ||
+            (!note.hold && note.start - now <= 10 && note.start - now >= -60))
       );
       if (!target) continue;
 
