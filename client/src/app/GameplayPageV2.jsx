@@ -104,6 +104,9 @@ export default function GameplayPageV2({
   const musicBufferRef = useRef(null);
   const musicSourceRef = useRef(null);
   const musicClockRef = useRef(null);
+  // Last observed ctx clock sample, for extrapolating between its chunked
+  // updates on the wall clock.
+  const musicSampleRef = useRef(null);
   const audioCtxRef = useRef(null);
   const pointersRef = useRef(new Map());
   const pointerUpRef = useRef(null);
@@ -366,15 +369,22 @@ export default function GameplayPageV2({
 
     // Master clock: the decoded track playing through the AudioContext. It is
     // scheduled on the same timeline as the notes, so music and field can never
-    // drift apart the way the <audio> element (chunked, late) made them.
+    // drift apart the way the <audio> element (chunked, late) made them. But
+    // ctx.currentTime itself updates in chunks on iOS, so the clock glides
+    // between its updates on the wall clock — always forward, capped, and
+    // re-anchored to the real hardware position every sample.
     const music = musicClockRef.current;
     const musicCtx = audioCtxRef.current;
     if (music && musicCtx && musicCtx.state === "running") {
-      return (
-        music.anchorSongMs -
-        (music.anchorCtxTime - musicCtx.currentTime) * 1000 -
-        music.outputLatencyMs
+      const nowWall = performance.now();
+      const sample = musicSampleRef.current;
+      const bridge = sample ? Math.min(Math.max(0, nowWall - sample.at), 150) : 0;
+      const ctxNow = Math.max(
+        musicCtx.currentTime,
+        sample ? sample.ctxTime + bridge / 1000 : 0
       );
+      musicSampleRef.current = { ctxTime: ctxNow, at: nowWall };
+      return music.anchorSongMs + (ctxNow - music.anchorCtxTime) * 1000;
     }
 
     if (audio && !audio.paused && Number.isFinite(audio.currentTime)) {
@@ -532,9 +542,7 @@ export default function GameplayPageV2({
       musicSourceRef.current = source;
       musicClockRef.current = {
         anchorCtxTime: musicCtx.currentTime,
-        anchorSongMs: origin,
-        outputLatencyMs:
-          (musicCtx.outputLatency || musicCtx.baseLatency || 0) * 1000
+        anchorSongMs: origin
       };
     }
 
@@ -617,6 +625,7 @@ export default function GameplayPageV2({
       }
       musicSourceRef.current = null;
       musicClockRef.current = null;
+      musicSampleRef.current = null;
     }
     try {
       if (audioRef.current) audioRef.current.pause();
@@ -646,10 +655,9 @@ export default function GameplayPageV2({
       musicSourceRef.current = source;
       musicClockRef.current = {
         anchorCtxTime: musicCtx.currentTime,
-        anchorSongMs: at,
-        outputLatencyMs:
-          (musicCtx.outputLatency || musicCtx.baseLatency || 0) * 1000
+        anchorSongMs: at
       };
+      musicSampleRef.current = { ctxTime: musicCtx.currentTime, at: performance.now() };
       phaseRef.current = "playing";
       setPhase("playing");
       return;
@@ -734,6 +742,7 @@ export default function GameplayPageV2({
       musicSourceRef.current = null;
     }
     musicClockRef.current = null;
+    musicSampleRef.current = null;
     musicBufferRef.current = null;
     if (song) {
       decodeTrackBuffer(song)
