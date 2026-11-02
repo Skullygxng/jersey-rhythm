@@ -241,6 +241,9 @@ function HomePage({ scores }) {
           <Link to="/leaderboards" className="btn btn-ghost">
             BOARDS<span className="soon-tag">SOON</span>
           </Link>
+          <a href="./preview/cityrunner.html" className="btn btn-ghost">
+            CITY RUNNER PREVIEW
+          </a>
         </div>
         <div className="hero-stats">
           <div>

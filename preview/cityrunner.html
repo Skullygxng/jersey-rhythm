@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>City Runner — Jersey Rhythm prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+        background: #08050a;
+        color: #f4efe4;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      h1 {
+        margin: 0;
+        font-size: 14px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #ff2d78;
+        text-align: center;
+      }
+      h2 {
+        margin: 0 0 6px;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: rgba(244, 239, 228, 0.7);
+        text-align: center;
+      }
+      section {
+        width: 100%;
+        max-width: 360px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      p {
+        margin: 6px 0 0;
+        max-width: 360px;
+        text-align: center;
+        font-size: 12px;
+        line-height: 1.45;
+        color: rgba(244, 239, 228, 0.62);
+      }
+      canvas {
+        background: #0b0710;
+        border-radius: 12px;
+        box-shadow: 0 0 0 1px rgba(255, 45, 120, 0.25);
+        display: block;
+      }
+      .pair {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+      }
+      figure {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+      figcaption {
+        font-size: 10px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: rgba(244, 239, 228, 0.6);
+        text-align: center;
+      }
+      .poses {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+      }
+      .poses canvas {
+        width: 100%;
+        height: auto;
+      }
+      .panel {
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(255, 45, 120, 0.25);
+        background: #0b0710;
+      }
+      .readout {
+        font: 11px ui-monospace, Menlo, monospace;
+        color: rgba(244, 239, 228, 0.72);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>City Runner — prototype</h1>
+    <p>
+      Direction B. Eight transparent pose frames, selected by the shared song
+      clock. The production crew and the 84% judgement line are untouched; this
+      page is the only place City Runner appears.
+    </p>
+    <p class="readout" id="mode">checking manifest…</p>
+
+    <section>
+      <h2>1. Previous silhouette / City Runner</h2>
+      <div class="pair">
+        <figure>
+          <canvas id="old" width="150" height="240"></canvas>
+          <figcaption>Phase 2 crew</figcaption>
+        </figure>
+        <figure>
+          <canvas id="new" width="150" height="240"></canvas>
+          <figcaption>City Runner</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. The eight key poses</h2>
+      <div class="poses" id="poses"></div>
+      <p class="readout" id="frames">measuring…</p>
+    </section>
+
+    <section>
+      <h2>3. Mobile gameplay, 320 × 568</h2>
+      <div class="panel" style="width: 320px; height: 568px">
+        <canvas id="field" width="320" height="568"></canvas>
+      </div>
+      <p class="readout" id="clock">—</p>
+      <p>
+        Real field renderer, real notes, the original judgement line at 84% of the
+        field. City Runner stands at the line the way the production crew does,
+        with the notes repainted over it, so it cannot cover the highway.
+      </p>
+    </section>
+
+    <script type="module">
+      import { drawDanceCrew } from "../client/src/app/gameplay/dancer.js";
+      import { FieldRenderer } from "../client/src/app/gameplay/renderer.js";
+      import { beatPosition } from "../client/src/lib/timeline.js";
+      import {
+        drawCityRunner,
+        loadCityRunner,
+        pickFrameIndex
+      } from "../client/src/app/gameplay/cityRunner.js";
+
+      const BEAT_MS = 500;
+      const started = performance.now();
+      const clock = () => performance.now() - started;
+
+      function setup(canvas) {
+        const width = canvas.width;
+        const height = canvas.height;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + "px";
+        canvas.style.height = height + "px";
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { ctx, w: width, h: height };
+      }
+
+      const oldView = setup(document.getElementById("old"));
+      const newView = setup(document.getElementById("new"));
+      const fieldCanvas = document.getElementById("field");
+      fieldCanvas.style.width = "320px";
+      fieldCanvas.style.height = "568px";
+      const renderer = new FieldRenderer(fieldCanvas);
+
+      const notes = [];
+      for (let i = 0; i < 26; i += 1) {
+        const holdNote = i % 9 === 3;
+        notes.push({
+          id: i,
+          lane: i % 4,
+          type: holdNote ? "hold" : "tap",
+          start: 400 + i * 200,
+          duration: holdNote ? 520 : 0,
+          resolved: null,
+          hold: null
+        });
+      }
+      const engine = {
+        notes,
+        pressed: [false, false, false, false],
+        combo: 12,
+        score: 4200,
+        accuracy: 97,
+        multiplier: 1.25,
+        vibe: 88,
+        breaks: 1
+      };
+
+      const city = await loadCityRunner({
+        manifestUrl: "../art/cityrunner/manifest.json",
+        sheetUrl: "../art/cityrunner/eight_pose_reference.png"
+      });
+
+      const sizes = city.frames.map((frame) => frame.sw + "×" + frame.sh);
+      console.log("[cityrunner] mode: " + city.mode + " (" + city.source + ")");
+      console.log("[cityrunner] frames: " + city.frames.length + " — " + sizes.join(" "));
+
+      // Measure where each pose's artwork actually sits inside its own canvas, so
+      // height and ground anchoring can be checked as numbers rather than by eye.
+      const anchors = city.frames.map((frame, index) => {
+        const probe = document.createElement("canvas");
+        probe.width = frame.sw;
+        probe.height = frame.sh;
+        const pctx = probe.getContext("2d", { willReadFrequently: true });
+        pctx.drawImage(frame.image, 0, 0);
+        const data = pctx.getImageData(0, 0, frame.sw, frame.sh).data;
+        let top = frame.sh;
+        let bottom = -1;
+        let left = frame.sw;
+        let right = -1;
+        for (let y = 0; y < frame.sh; y += 1) {
+          for (let x = 0; x < frame.sw; x += 1) {
+            if (data[(y * frame.sw + x) * 4 + 3] < 24) continue;
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+            if (x < left) left = x;
+            if (x > right) right = x;
+          }
+        }
+        return { index, top, bottom, left, right, height: bottom - top + 1 };
+      });
+      const heights = anchors.map((item) => item.height);
+      const feet = anchors.map((item) => item.bottom);
+      console.log("[cityrunner] content heights: " + heights.join(" "));
+      console.log("[cityrunner] foot lines: " + feet.join(" "));
+      console.log(
+        "[cityrunner] height spread: " +
+          (Math.max(...heights) - Math.min(...heights)) +
+          "px, foot spread: " +
+          (Math.max(...feet) - Math.min(...feet)) +
+          "px"
+      );
+
+      document.getElementById("mode").textContent =
+        "mode: " + city.mode + " (" + city.source + ") · " + city.frames.length + " frames";
+
+      document.getElementById("frames").textContent =
+        city.mode === "manifest"
+          ? "clean frames: " + city.frames.length + " · heights " + heights.join("/")
+          : "reference fallback: " + city.frames.length + " poses · " + sizes.join("  ");
+
+      // Pose strip.
+      const strip = document.getElementById("poses");
+      for (let index = 0; index < city.frames.length; index += 1) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 84;
+        canvas.height = 150;
+        const ctx = canvas.getContext("2d");
+        const frame = city.frames[index];
+        if (frame) {
+          const scale = Math.min(78 / frame.sw, 144 / frame.sh);
+          ctx.drawImage(
+            frame.image,
+            frame.sx,
+            frame.sy,
+            frame.sw,
+            frame.sh,
+            (84 - frame.sw * scale) / 2,
+            146 - frame.sh * scale,
+            frame.sw * scale,
+            frame.sh * scale
+          );
+        }
+        strip.appendChild(canvas);
+      }
+
+      function paintPair(beatPos) {
+        for (const view of [oldView, newView]) {
+          view.ctx.clearRect(0, 0, view.w, view.h);
+          view.ctx.fillStyle = "rgba(255,45,120,0.06)";
+          view.ctx.fillRect(0, view.h * 0.78, view.w, view.h * 0.22);
+        }
+
+        drawDanceCrew(oldView.ctx, {
+          w: oldView.w,
+          h: oldView.h,
+          cx: oldView.w / 2,
+          hitY: oldView.h * 0.86,
+          laneWidth: oldView.w / 4,
+          now: beatPos * BEAT_MS,
+          beatMs: BEAT_MS,
+          kickSteps: null,
+          energy: 0.5,
+          reaction: 0,
+          reactionSide: 0,
+          slump: 0,
+          fever: false,
+          crewHeat: 0
+        });
+
+        drawCityRunner(newView.ctx, {
+          frames: city.frames,
+          beats: city.beats,
+          referenceHeight: city.referenceHeight,
+          x: newView.w / 2,
+          ground: newView.h - 10,
+          beatPos,
+          scale: 200 / city.referenceHeight,
+          alpha: 1
+        });
+      }
+
+      function paintField(beatPos) {
+        const now = beatPos * BEAT_MS;
+        renderer.draw({
+          engine,
+          now: 1600 + (now % 2400),
+          dt: 16,
+          travelMs: 1500,
+          beatMs: BEAT_MS,
+          chartEnd: 8000,
+          startAt: 0,
+          // Countdown keeps the field, notes and stage drawn but leaves the
+          // production crew off, so the prototype can hold the stage alone.
+          phase: "countdown",
+          kickSteps: [0, 4, 8, 11, 14],
+          backdropVideo: null,
+          videoOpacity: 0
+        });
+
+        const gap = Math.min(renderer.w * 0.42, renderer.laneW * 2 + 42);
+        // Stand at the judgement line, the way the production crew does, then put
+        // the notes back on top so the prototype cannot cover them.
+        const characterHeight = Math.min(96, renderer.hitY * 0.3);
+        const x = Math.max(characterHeight / 2 + 2, renderer.cx - gap);
+        drawCityRunner(renderer.ctx, {
+          frames: city.frames,
+          beats: city.beats,
+          referenceHeight: city.referenceHeight,
+          x,
+          ground: renderer.hitY + 4,
+          beatPos,
+          scale: characterHeight / city.referenceHeight,
+          alpha: 1
+        });
+        renderer.drawNotes(engine, 1600 + (now % 2400), 1500);
+
+        if (!window.__cityRunnerSizeLogged) {
+          window.__cityRunnerSizeLogged = true;
+          console.log(
+            "[cityrunner] gameplay: " +
+              Math.round(renderer.w) +
+              "×" +
+              Math.round(renderer.h) +
+              ", judgement line " +
+              (renderer.hitY / renderer.h).toFixed(2) +
+              ", character " +
+              Math.round(characterHeight) +
+              "px (" +
+              ((characterHeight / renderer.h) * 100).toFixed(0) +
+              "% of field height) at x " +
+              Math.round(x) +
+              ", highway edge " +
+              Math.round(renderer.cx - renderer.laneW * 2)
+          );
+        }
+      }
+
+      function frame() {
+        const now = clock();
+        const beatPos = beatPosition(now, BEAT_MS);
+        paintPair(beatPos);
+        paintField(beatPos);
+        document.getElementById("clock").textContent =
+          "beat " +
+          beatPos.toFixed(2) +
+          " · pose " +
+          (pickFrameIndex(city.frames, beatPos, city.beats) + 1) +
+          "/" +
+          city.frames.length +
+          " · judgement line " +
+          (renderer.hitY / renderer.h).toFixed(2);
+        requestAnimationFrame(frame);
+      }
+      frame();
+    </script>
+  </body>
+</html>
