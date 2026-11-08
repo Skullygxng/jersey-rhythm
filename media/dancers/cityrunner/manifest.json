@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "character": "City Runner",
+  "loopBeats": 4,
+  "referenceHeight": 420,
+  "mode": "frames",
+  "frames": [
+    {
+      "src": "frames/pose-01.png",
+      "beat": 0.0,
+      "footX": 0.5,
+      "footY": 0.9453125
+    },
+    {
+      "src": "frames/pose-02.png",
+      "beat": 0.5,
+      "footX": 0.5,
+      "footY": 0.9453125
+    },
+    {
+      "src": "frames/pose-03.png",
+      "beat": 1.0,
+      "footX": 0.5,
+      "footY": 0.9453125
+    },
+    {
+      "src": "frames/pose-04.png",
+      "beat": 1.5,
+      "footX": 0.5,
+      "footY": 0.9453125
+    },
+    {
+      "src": "frames/pose-05.png",
+      "beat": 2.0,
+      "footX": 0.5,
+      "footY": 0.9453125
+    },
+    {
+      "src": "frames/pose-06.png",
+      "beat": 2.5,
+      "footX": 0.5,
+      "footY": 0.9453125
+    },
+    {
+      "src": "frames/pose-07.png",
+      "beat": 3.0,
+      "footX": 0.5,
+      "footY": 0.9453125
+    },
+    {
+      "src": "frames/pose-08.png",
+      "beat": 3.5,
+      "footX": 0.5,
+      "footY": 0.9453125
+    }
+  ]
+}
